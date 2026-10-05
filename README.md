@@ -57,6 +57,18 @@ Im Ordner [gehaeuse/](gehaeuse/) liegen die fertigen STL-Dateien und das paramet
 
 **Einbau:** Die Kabelverschraubungen sollen **nach unten** zeigen, dann läuft Tropfwasser ab. Für Dichtheit eine Silikonraupe oder ein Moosgummiband unter den Deckelrand legen und einen **Silica-Gel-Beutel** ins Gehäuse geben. Wichtig: Die Maße der TENSTAR-Platine vor dem Druck nachmessen und in `BOARDS` eintragen.
 
+## Messverfahren
+
+![Messprinzip](docs/messprinzip.svg)
+
+Jede Messung besteht aus 9 Pings. Ungültige Werte und Wandechos werden verworfen, der Rest gemittelt:
+
+![Filterung](docs/filterung.svg)
+
+Gesendet wird nur, wenn sich etwas ändert oder das Heartbeat-Intervall abgelaufen ist:
+
+![Sendelogik](docs/sendelogik.svg)
+
 ## Übertragung / Intervall
 
 | Parameter | Wert | Begründung |
