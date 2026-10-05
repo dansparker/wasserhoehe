@@ -42,7 +42,12 @@ level_meas_t level_evaluate(const level_cfg_t *cfg, const uint16_t *echo_us, uin
 int  report_should_send(report_state_t *rs, level_meas_t *m, uint32_t now_ms,
                         uint16_t delta_mm, uint32_t heartbeat_ms, uint8_t fail_limit);
 
-/* Schreibt "L=<mm>;D=<mm>;S=<status>\n", liefert Laenge. buf >= 32 Byte. */
-int  level_format(char *buf, const level_meas_t *m);
+/* Schreibt "L=<mm>;D=<mm>;S=<status>;T=<C>\n", liefert Laenge. buf >= 32 Byte. */
+int  level_format(char *buf, const level_meas_t *m, int8_t temp_c);
+
+/* DS18B20: prueft CRC + Plausibilitaet des 9-Byte-Scratchpads.
+ * Liefert 1 und *temp_c (gerundet), sonst 0. */
+uint8_t ds18b20_crc8(const uint8_t *p, uint8_t n);
+int     ds18b20_decode(const uint8_t sp[9], int8_t *temp_c);
 
 #endif

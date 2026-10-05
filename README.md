@@ -13,6 +13,7 @@ JSN-SR04T ──► STM32F103 (Bluepill) ──UART──► CC2530 (PTVO-Firmwa
 | JSN-SR04T (wasserdicht) | Abstand Sensor → Wasseroberfläche, 25–450 cm |
 | STM32F103C8T6 Bluepill | Messung, Filterung, Sendelogik |
 | TENSTAR CC2530 | Zigbee-Router mit [PTVO-Firmware](https://ptvo.info/zigbee-configurable-firmware-features/) (UART → Zigbee) |
+| DS18B20 wasserdicht (optional) | Lufttemperatur im Schacht für die Schallgeschwindigkeit |
 | 5-V-Netzteil (≥ 1 A) | Versorgung |
 
 ### Verdrahtung
@@ -25,6 +26,8 @@ JSN-SR04T ──► STM32F103 (Bluepill) ──UART──► CC2530 (PTVO-Firmwa
 | Bluepill **PB7** | JSN-SR04T **Trig** | 3,3 V reichen |
 | JSN-SR04T **Echo** | Bluepill **PB6** | 5-V-Pegel, PB6 ist 5-V-tolerant |
 | Bluepill **PA9** (TX) | CC2530 **P0.2** (RX) | 9600 Baud, 8N1, beide 3,3 V |
+| DS18B20 **DQ** (gelb) | Bluepill **PB8** | optional; **4,7 kΩ** von DQ nach 3,3 V |
+| DS18B20 **VDD** (rot) / **GND** (schwarz) | Bluepill **3.3** / **GND** | nicht parasitär betreiben |
 
 PC13 (Onboard-LED) leuchtet während einer Messung.
 
@@ -32,6 +35,7 @@ PC13 (Onboard-LED) leuchtet während einer Messung.
 
 - Elektronik in einer Box **oben** am Schachtdeckel, nur der wasserdichte Schallkopf hängt im Schacht (Kabel 2,5 m).
 - Schallkopf **senkrecht und mittig** ausrichten, Abstand zu Wänden, Leitern und Rohren: Der Schallkegel ist breit (≈ 45–75°), Wandechos sind der häufigste Messfehler.
+- Den DS18B20 neben dem Schallkopf **in der Schachtluft** aufhängen, nicht in der Box und nicht im Wasser.
 - `MOUNT_MM` in [main.c](firmware/src/main.c) = Abstand von der Schallkopf-Fläche zum Schachtboden.
 - Die Antenne bzw. den CC2530 nicht unter einem Metall- oder Betondeckel einbauen, sonst kommt kaum Funk durch.
 
@@ -46,7 +50,9 @@ PC13 (Onboard-LED) leuchtet während einer Messung.
 
 Das ergibt im Ruhezustand ca. 12 Nachrichten pro Stunde. Weil das Gerät am Netzteil hängt, läuft der CC2530 als **Router** und verstärkt damit auch das Zigbee-Netz.
 
-Telegramm (ASCII): `L=1800;D=1200;S=0` – Pegel in mm, Distanz in mm, Status (0 = OK, 1 = kein Echo, 2 = instabil).
+Telegramm (ASCII): `L=1800;D=1200;S=0;T=9` – Pegel in mm, Distanz in mm, Status (0 = OK, 1 = kein Echo, 2 = instabil), verwendete Temperatur in °C.
+
+**Temperatur:** Ist ein DS18B20 angeschlossen, startet bei jeder Messung eine Wandlung, die parallel zu den Pings läuft. Fehlt der Sensor, rechnet die Firmware mit `TEMP_DEFAULT_C` = 10 °C. Einzelne Lesefehler überbrückt der letzte gültige Wert (bis 1 min). Fehlerhafte Werte werden verworfen: CRC-Fehler, der 85-°C-Einschaltwert und alles außerhalb von −40…60 °C.
 
 ## Firmware STM32
 
@@ -78,7 +84,7 @@ cd test
 python -m ziglang cc -I../firmware/src test_level.c ../firmware/src/level.c -o t.exe && ./t.exe
 ```
 
-Getestet werden Umrechnung, Temperatureinfluss, Ausreißer (Wandecho, Timeout, Blindzone), kein Echo, starke Streuung, leerer Schacht, Array-Überlauf, Sendelogik (Delta, Heartbeat, Fehlerentprellung), Zähler-Überlauf nach 49 Tagen und das Telegramm-Format.
+Getestet werden Umrechnung, DS18B20-Dekodierung (CRC, negative Werte, 85-°C-Einschaltwert, offener oder kurzgeschlossener Bus), Temperatureinfluss, Ausreißer (Wandecho, Timeout, Blindzone), kein Echo, starke Streuung, leerer Schacht, Array-Überlauf, Sendelogik (Delta, Heartbeat, Fehlerentprellung), Zähler-Überlauf nach 49 Tagen und das Telegramm-Format.
 
 ## Bekannte Schwachstellen und Gegenmaßnahmen
 
@@ -86,7 +92,7 @@ Getestet werden Umrechnung, Temperatureinfluss, Ausreißer (Wandecho, Timeout, B
 |---|---|
 | Wandechos oder Leiter im Schacht | Median + Mittelung nur im ±3-cm-Fenster, mindestens 5 von 9 Echos nötig, sonst Status „instabil“ |
 | Wasser < 25 cm unter Sensor (Blindzone) | wird als Fehler gemeldet; Sensor ≥ 30 cm über max. Wasserstand montieren |
-| Schallgeschwindigkeit hängt von der Temperatur ab (±1,7 % ≈ 5 cm bei 3 m) | Kompensation mit fester Schachttemperatur `TEMP_C` (10 °C); optional DS18B20 nachrüsten |
+| Schallgeschwindigkeit hängt von der Temperatur ab (≈ 5 mm pro °C bei 3 m) | DS18B20 im Schacht (optional), sonst fest 10 °C. Der interne STM32-Sensor ist ungeeignet (misst den Chip, ab Werk ±20 °C) |
 | Kondenswasser am Schallkopf | Schallkopf leicht schräg bzw. mit Abtropfkante montieren; zeigt sich als „kein Echo“ |
 | Bluepill-Clone ohne funktionierenden Quarz | Automatischer Rückfall auf den internen 8-MHz-Takt |
 | Hänger (EMV, Echo-Leitung klemmt) | Hardware-Watchdog (~26 s), Timeouts bei allen Warteschleifen |

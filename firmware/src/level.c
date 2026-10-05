@@ -91,13 +91,46 @@ static char *put_u(char *p, uint32_t v)
     return p;
 }
 
-int level_format(char *buf, const level_meas_t *m)
+int level_format(char *buf, const level_meas_t *m, int8_t temp_c)
 {
     char *p = buf;
     *p++ = 'L'; *p++ = '='; p = put_u(p, m->level_mm);
     *p++ = ';'; *p++ = 'D'; *p++ = '='; p = put_u(p, m->dist_mm);
     *p++ = ';'; *p++ = 'S'; *p++ = '='; p = put_u(p, m->status);
+    *p++ = ';'; *p++ = 'T'; *p++ = '=';
+    if (temp_c < 0) { *p++ = '-'; p = put_u(p, (uint32_t)(-(int32_t)temp_c)); }
+    else p = put_u(p, (uint32_t)temp_c);
     *p++ = '\n';
     *p = '\0';
     return (int)(p - buf);
+}
+
+uint8_t ds18b20_crc8(const uint8_t *p, uint8_t n)
+{
+    uint8_t crc = 0;                                 /* Dallas/Maxim, Poly 0x8C */
+    while (n--) {
+        uint8_t b = *p++;
+        for (uint8_t i = 0; i < 8; i++) {
+            uint8_t mix = (crc ^ b) & 1u;
+            crc >>= 1;
+            if (mix) crc ^= 0x8Cu;
+            b >>= 1;
+        }
+    }
+    return crc;
+}
+
+int ds18b20_decode(const uint8_t sp[9], int8_t *temp_c)
+{
+    int all_same = 1;                                /* Bus offen (FF) oder kurz (00) */
+    for (uint8_t i = 1; i < 9; i++) if (sp[i] != sp[0]) all_same = 0;
+    if (all_same) return 0;
+    if (ds18b20_crc8(sp, 8) != sp[8]) return 0;
+
+    int16_t raw = (int16_t)((uint16_t)sp[0] | ((uint16_t)sp[1] << 8));
+    if (raw == 0x0550) return 0;                     /* 85 C = Einschaltwert, keine Messung */
+    int32_t t = raw >= 0 ? (raw + 8) / 16 : -((-raw + 8) / 16);
+    if (t < -40 || t > 60) return 0;                 /* fuer einen Schacht unplausibel */
+    *temp_c = (int8_t)t;
+    return 1;
 }

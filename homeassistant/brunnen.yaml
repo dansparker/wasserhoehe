@@ -1,6 +1,6 @@
 # In configuration.yaml unter "mqtt:" einfuegen.
 # "brunnen" = Friendly Name des PTVO-Geraets in Zigbee2MQTT.
-# Die Firmware sendet: L=<Pegel mm>;D=<Distanz mm>;S=<Status>
+# Die Firmware sendet: L=<Pegel mm>;D=<Distanz mm>;S=<Status>;T=<Temperatur C>
 sensor:
   - name: "Brunnen Wasserhoehe"
     unique_id: brunnen_wasserhoehe
@@ -24,7 +24,21 @@ sensor:
     value_template: >-
       {% set a = value_json.action | default('') %}
       {% if a.startswith('L=') %}
-        {{ {'0': 'OK', '1': 'kein Echo', '2': 'instabil'}[a.split('S=')[1] | trim] | default('unbekannt') }}
+        {{ {'0': 'OK', '1': 'kein Echo', '2': 'instabil'}[a.split('S=')[1].split(';')[0] | trim] | default('unbekannt') }}
+      {% else %}
+        {{ this.state }}
+      {% endif %}
+
+  - name: "Brunnen Schachttemperatur"
+    unique_id: brunnen_temperatur
+    state_topic: "zigbee2mqtt/brunnen"
+    unit_of_measurement: "°C"
+    device_class: temperature
+    state_class: measurement
+    value_template: >-
+      {% set a = value_json.action | default('') %}
+      {% if 'T=' in a %}
+        {{ a.split('T=')[1] | trim | int }}
       {% else %}
         {{ this.state }}
       {% endif %}

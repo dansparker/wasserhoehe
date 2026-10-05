@@ -3,6 +3,7 @@
  *
  *  JSN-SR04T  TRIG -> PB7        ECHO (5 V) -> PB6 (5V-tolerant)
  *  CC2530     RX (P0.2) <- PA9 (USART1 TX, 9600 8N1)
+ *  DS18B20    DQ -> PB8 (optional, 4,7 kOhm Pull-up nach 3,3 V)
  *  LED        PC13 (aktiv low), blinkt bei jeder Messung
  */
 #include "stm32f1xx.h"
@@ -10,7 +11,8 @@
 
 /* ---------- Konfiguration ------------------------------------------ */
 #define MOUNT_MM        3000u    /* Sensorflaeche ueber Schachtboden  */
-#define TEMP_C          10       /* typ. Brunnenschacht-Temperatur    */
+#define TEMP_DEFAULT_C  10       /* ohne DS18B20 / bei Lesefehler     */
+#define TEMP_KEEP       6        /* letzten DS18B20-Wert so oft halten */
 #define SAMPLES         9        /* Pings pro Messung                 */
 #define PING_GAP_MS     70       /* Nachhall abklingen lassen         */
 #define MEAS_PERIOD_MS  10000u   /* alle 10 s messen                  */
@@ -23,6 +25,7 @@
 #define TRIG_PIN  (1u << 7)
 #define ECHO_PIN  (1u << 6)
 #define LED_PIN   (1u << 13)
+#define OW_PIN    (1u << 8)
 #define ECHO_HIGH (GPIOB->IDR & ECHO_PIN)
 
 static volatile uint32_t ms_ticks;
@@ -59,6 +62,9 @@ static void periph_init(void)
     /* PB7 Push-Pull 2 MHz, PB6 Eingang mit Pull-down (offenes Kabel = low) */
     GPIOB->CRL = (GPIOB->CRL & ~(0xFFu << 24)) | (0x2u << 28) | (0x8u << 24);
     GPIOB->BRR = TRIG_PIN | ECHO_PIN;
+    /* PB8 Open-Drain 2 MHz, losgelassen (1-Wire) */
+    GPIOB->CRH = (GPIOB->CRH & ~0xFu) | 0x6u;
+    GPIOB->BSRR = OW_PIN;
     /* PA9 AF Push-Pull 2 MHz */
     GPIOA->CRH = (GPIOA->CRH & ~(0xFu << 4)) | (0xAu << 4);
     /* PC13 Push-Pull 2 MHz, LED aus */
@@ -123,6 +129,69 @@ static uint16_t ping_us(void)
     return dt;
 }
 
+/* ---------- 1-Wire / DS18B20 ------------------------------------------ */
+#define OW_LOW()   (GPIOB->BRR  = OW_PIN)
+#define OW_REL()   (GPIOB->BSRR = OW_PIN)
+#define OW_READ()  ((GPIOB->IDR & OW_PIN) != 0)
+
+static int ow_reset(void)
+{
+    if (!OW_READ()) return 0;                          /* Bus kurz / kein Pull-up */
+    OW_LOW();  delay_us(480);
+    __disable_irq();
+    OW_REL();  delay_us(70);
+    int present = !OW_READ();
+    __enable_irq();
+    delay_us(410);
+    return present;
+}
+
+static int ow_bit(int b)
+{
+    __disable_irq();
+    OW_LOW();  delay_us(b ? 3 : 60);
+    OW_REL();
+    if (b) delay_us(9);
+    int r = OW_READ();
+    __enable_irq();
+    delay_us(b ? 55 : 10);
+    return r;
+}
+
+static void ow_write(uint8_t v)
+{
+    for (int i = 0; i < 8; i++, v >>= 1) ow_bit(v & 1u);
+}
+
+static uint8_t ow_read(void)
+{
+    uint8_t v = 0;
+    for (int i = 0; i < 8; i++) v |= (uint8_t)(ow_bit(1) << i);
+    return v;
+}
+
+/* Startet Wandlung (750 ms, laeuft parallel zu den Pings). */
+static int ds_start(void)
+{
+    if (!ow_reset()) return 0;
+    ow_write(0xCC);                                    /* Skip ROM: nur ein Sensor */
+    ow_write(0x44);                                    /* Convert T */
+    return 1;
+}
+
+static int ds_read(int8_t *t)
+{
+    uint8_t sp[9];
+    uint32_t t0 = ms_ticks;
+    while (!ow_bit(1))                                 /* 1 = Wandlung fertig */
+        if (ms_ticks - t0 > 800u) return 0;
+    if (!ow_reset()) return 0;
+    ow_write(0xCC);
+    ow_write(0xBE);                                    /* Read Scratchpad */
+    for (int i = 0; i < 9; i++) sp[i] = ow_read();
+    return ds18b20_decode(sp, t);
+}
+
 static void uart_puts(const char *s)
 {
     while (*s) {
@@ -134,17 +203,18 @@ static void uart_puts(const char *s)
 
 int main(void)
 {
-    static const level_cfg_t cfg = {
+    static level_cfg_t cfg = {
         .mount_mm  = MOUNT_MM,
         .min_mm    = 250,
         .max_mm    = MOUNT_MM + 200,   /* Toleranz fuer Temperaturfehler */
         .window_mm = 30,
         .min_valid = SAMPLES / 2 + 1,
-        .temp_c    = TEMP_C,
+        .temp_c    = TEMP_DEFAULT_C,
     };
     report_state_t rs = { 0 };
     uint16_t echo[SAMPLES];
     char msg[32];
+    uint8_t temp_fail = TEMP_KEEP;
 
     clock_init();
     periph_init();
@@ -156,15 +226,26 @@ int main(void)
         if (ms_ticks - last >= MEAS_PERIOD_MS) {
             last = ms_ticks;
             GPIOC->BRR = LED_PIN;
+            int ds = ds_start();
             for (int i = 0; i < SAMPLES; i++) {
                 echo[i] = ping_us();
                 delay_ms(PING_GAP_MS);
             }
             GPIOC->BSRR = LED_PIN;
 
+            int8_t t;
+            if (ds && ds_read(&t)) {
+                cfg.temp_c = t;
+                temp_fail = 0;
+            } else if (temp_fail < TEMP_KEEP) {
+                temp_fail++;                           /* Einzelfehler: alten Wert halten */
+            } else {
+                cfg.temp_c = TEMP_DEFAULT_C;           /* kein Sensor angeschlossen */
+            }
+
             level_meas_t m = level_evaluate(&cfg, echo, SAMPLES);
             if (report_should_send(&rs, &m, ms_ticks, DELTA_MM, HEARTBEAT_MS, FAIL_LIMIT)) {
-                level_format(msg, &m);
+                level_format(msg, &m, cfg.temp_c);
                 uart_puts(msg);
             }
         }

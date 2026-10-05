@@ -74,11 +74,37 @@ int main(void)
     /* Format */
     char buf[32];
     level_meas_t f = { 65535, 65535, 2, 0 };
-    int n = level_format(buf, &f);
-    CHECK(strcmp(buf, "L=65535;D=65535;S=2\n") == 0 && n == 20);
+    int n = level_format(buf, &f, -40);
+    CHECK(strcmp(buf, "L=65535;D=65535;S=2;T=-40\n") == 0 && n == 26);
     f = (level_meas_t){ 0, 0, 0, 0 };
-    level_format(buf, &f);
-    CHECK(strcmp(buf, "L=0;D=0;S=0\n") == 0);
+    level_format(buf, &f, 0);
+    CHECK(strcmp(buf, "L=0;D=0;S=0;T=0\n") == 0);
+    level_format(buf, &f, 12);
+    CHECK(strcmp(buf, "L=0;D=0;S=0;T=12\n") == 0);
+
+    /* DS18B20: CRC gegen Maxim-AN27-Beispiel */
+    const uint8_t rom[] = { 0x02, 0x1C, 0xB8, 0x01, 0x00, 0x00, 0x00 };
+    CHECK(ds18b20_crc8(rom, 7) == 0xA2);
+
+    uint8_t sp[9] = { 0x91, 0x01, 0x4B, 0x46, 0x7F, 0xFF, 0x0F, 0x10, 0 };
+    int8_t t = 99;
+    sp[8] = ds18b20_crc8(sp, 8);
+    CHECK(ds18b20_decode(sp, &t) == 1 && t == 25);        /* 25,06 C */
+    sp[0] = 0x98; sp[1] = 0x00; sp[8] = ds18b20_crc8(sp, 8);
+    CHECK(ds18b20_decode(sp, &t) == 1 && t == 10);        /* 9,5 C -> 10 */
+    sp[0] = 0x5E; sp[1] = 0xFF; sp[8] = ds18b20_crc8(sp, 8);
+    CHECK(ds18b20_decode(sp, &t) == 1 && t == -10);       /* -10,125 C */
+    sp[0] = 0x50; sp[1] = 0x05; sp[8] = ds18b20_crc8(sp, 8);
+    t = 7;
+    CHECK(ds18b20_decode(sp, &t) == 0 && t == 7);         /* 85 C Einschaltwert */
+    sp[0] = 0x90; sp[1] = 0x01; sp[8] ^= 0x55;
+    CHECK(ds18b20_decode(sp, &t) == 0);                   /* CRC falsch */
+    memset(sp, 0xFF, 9);
+    CHECK(ds18b20_decode(sp, &t) == 0);                   /* kein Sensor (Bus high) */
+    memset(sp, 0x00, 9);
+    CHECK(ds18b20_decode(sp, &t) == 0);                   /* Bus kurz (CRC waere 0!) */
+    sp[0] = 0x00; sp[1] = 0x05; sp[2] = 1; sp[8] = ds18b20_crc8(sp, 8);
+    CHECK(ds18b20_decode(sp, &t) == 0);                   /* 80 C unplausibel */
 
     printf(fails ? "%d FEHLER\n" : "Alle Tests OK\n", fails);
     return fails != 0;
