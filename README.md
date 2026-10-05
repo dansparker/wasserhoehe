@@ -39,6 +39,22 @@ PC13 (Onboard-LED) leuchtet während einer Messung.
 - `MOUNT_MM` in [main.c](firmware/src/main.c) = Abstand von der Schallkopf-Fläche zum Schachtboden.
 - Die Antenne bzw. den CC2530 nicht unter einem Metall- oder Betondeckel einbauen, sonst kommt kaum Funk durch.
 
+## Gehäuse (3D-Druck)
+
+Im Ordner [gehaeuse/](gehaeuse/) liegen die fertigen STL-Dateien und das parametrische Skript [gehaeuse.py](gehaeuse/gehaeuse.py). Neu erzeugen mit `pip install manifold3d numpy`, dann `python gehaeuse.py`.
+
+| | |
+|---|---|
+| Außenmaß | 120 × 91 × 34 mm (Unterteil) + 2,4 mm Deckel, Laschen für 4-mm-Schrauben |
+| Innen | Taschen für Bluepill, CC2530 und die JSN-Platine (Rippen mit Kabeldurchlässen; Platinen mit Heißkleber oder doppelseitigem Klebeband fixieren) |
+| Kabelseite | 3 × Ø 12,5 mm für **PG7-Kabelverschraubungen**: Ultraschallsensor, DS18B20, Netzteil |
+| Gegenseite | Ø 6,5 mm für eine **SMA-Antennenbuchse** (`ANT_D = 0` → kein Loch, falls der CC2530 eine PCB-Antenne hat) |
+| Deckel | Innenliegender Rand, 4 × M3-Senkkopf, in Dome mit 2,5-mm-Loch (selbstschneidend) |
+
+**Druck:** PETG oder ASA (PLA wird im feuchten Schacht weich und spröde), 0,2-mm-Schichten, 3 Wände, ohne Stützen. Das Unterteil steht aufrecht, der Deckel liegt mit der Außenseite nach unten.
+
+**Einbau:** Die Kabelverschraubungen sollen **nach unten** zeigen, dann läuft Tropfwasser ab. Für Dichtheit eine Silikonraupe oder ein Moosgummiband unter den Deckelrand legen und einen **Silica-Gel-Beutel** ins Gehäuse geben. Wichtig: Die Maße der TENSTAR-Platine vor dem Druck nachmessen und in `BOARDS` eintragen.
+
 ## Übertragung / Intervall
 
 | Parameter | Wert | Begründung |
