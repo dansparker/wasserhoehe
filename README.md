@@ -43,6 +43,8 @@ PC13 (Onboard-LED) leuchtet während einer Messung.
 
 Im Ordner [gehaeuse/](gehaeuse/) liegen die fertigen STL-Dateien und das parametrische Skript [gehaeuse.py](gehaeuse/gehaeuse.py). Neu erzeugen mit `pip install manifold3d numpy`, dann `python gehaeuse.py`.
 
+![Gehäuse](gehaeuse/gehaeuse_ansicht.png)
+
 | | |
 |---|---|
 | Außenmaß | 120 × 91 × 34 mm (Unterteil) + 2,4 mm Deckel, Laschen für 4-mm-Schrauben |
