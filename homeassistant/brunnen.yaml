@@ -1,0 +1,30 @@
+# In configuration.yaml unter "mqtt:" einfuegen.
+# "brunnen" = Friendly Name des PTVO-Geraets in Zigbee2MQTT.
+# Die Firmware sendet: L=<Pegel mm>;D=<Distanz mm>;S=<Status>
+sensor:
+  - name: "Brunnen Wasserhoehe"
+    unique_id: brunnen_wasserhoehe
+    state_topic: "zigbee2mqtt/brunnen"
+    unit_of_measurement: "cm"
+    device_class: distance
+    state_class: measurement
+    value_template: >-
+      {% set a = value_json.action | default('') %}
+      {% if a.startswith('L=') and 'S=0' in a %}
+        {{ (a.split(';')[0][2:] | int / 10) | round(1) }}
+      {% elif a.startswith('L=') %}
+        unavailable
+      {% else %}
+        {{ this.state }}
+      {% endif %}
+
+  - name: "Brunnen Sensorstatus"
+    unique_id: brunnen_status
+    state_topic: "zigbee2mqtt/brunnen"
+    value_template: >-
+      {% set a = value_json.action | default('') %}
+      {% if a.startswith('L=') %}
+        {{ {'0': 'OK', '1': 'kein Echo', '2': 'instabil'}[a.split('S=')[1] | trim] | default('unbekannt') }}
+      {% else %}
+        {{ this.state }}
+      {% endif %}
